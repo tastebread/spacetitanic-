@@ -1,0 +1,94 @@
+import pandas as pd
+import numpy as np
+from sklearn.metrics import mean_absolute_error,r2_score
+import matplotlib.pyplot as plt
+from category_encoders import OneHotEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import RidgeCV
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.tree import DecisionTreeClassifier
+import pandas_profiling as pp
+import IPython
+import warnings
+warnings.filterwarnings(action='ignore')
+train = pd.read_csv('/Users/tastebread/Desktop/kaggle/spacetitanic/train.csv')
+test = pd.read_csv('/Users/tastebread/Desktop/kaggle/spacetitanic/test.csv')
+submission = pd.read_csv('/Users/tastebread/Desktop/kaggle/spacetitanic/sample_submission.csv')
+print(train.shape,test.shape)
+
+#결측치가 있는 행 제거
+"""
+train = train.dropna(axis=0)
+test = test.dropna(axis=0)
+
+print(train.info())
+print(train['Age'].mean())
+"""
+#ProfileReport 를 이용해서 데이터리포트 만들어보기
+#train_profile = pp.ProfileReport(train, minimal=True).to_notebook_iframe()#minimal -> 간소화 파라미터
+#train,val,test 데이터 나누기
+target = 'Transported'
+train,val = train_test_split(train, stratify=train[target], train_size=0.8,test_size=0.2,random_state=42)
+#stratify - > 타겟 데이터가 한쪽으로 쏠리지 않게 방지해주는 파라미터
+print(train.shape,val.shape,test.shape)
+
+features = train.drop(columns=[target]).columns
+
+X_train = train[features]
+y_train = train[target]
+
+X_val = val[features]
+y_val = val[target]
+
+X_test = test[features]
+
+#기준모델로 최다빈도를 사용할경우 정확도를 구해보기
+major = y_train.mode()[0]
+y_pred = [major] * len(y_train)
+print(f'training accuracy : {accuracy_score(y_train,y_pred)}')
+
+#데이터 eda 및 특성공학 수행
+#print(train.T.duplicated()) # 중복된 특성이 있는지 검색
+
+#많은 범주를 가지는 카테고리 특성들이 있는지(카디널리티) 확인하는 방법
+#print(train.describe(exclude='number').T.sort_values(by='unique'))
+
+
+#파이프라인 만들기
+"""
+결측치 처리, 스케일링, 모델학습 등 머신러닝 프로세스에서
+파이프라인을 사용하면 중복 코드를 최소화하여 쉽게 연견할 수 있다
+"""
+pipe = make_pipeline(
+    OneHotEncoder(),
+    SimpleImputer(),
+    StandardScaler(),
+    DecisionTreeClassifier(min_samples_leaf=10,random_state=42) #결정트리 모델
+)
+model = pipe.fit(X_train,y_train)
+print(f'훈련 정확도: {pipe.score(X_train, y_train)}')
+print(f'검증 정확도: {pipe.score(X_val,y_val)}')
+
+#결정 트리에서 확인할수있는 특성중요도
+
+"""
+선형모델에서는 특성과 타겟의 관계를 확인하기 위해 회귀계수를 사용한다
+결정트리에서 대신 특성중요도를 통해 확인할수있다 (회귀계수와 는 달리 항상 양수값을 가진다
+특성중요도를 통 특성이 얼마나 일찍 그리고 자주 분기에 사용되는지 알수있다
+
+model_dt = pipe.named_steps['decisiontreeclassifier']
+enc = pipe.named_steps['onehotencoder']
+encoded_columns = enc.transform(X_val).columns
+
+importances = pd.Series(model_dt.feature_importances_, encoded_columns)
+plt.figure(figsize=(6,8))
+importances.sort_values().plot.barh()
+plt.savefig('test.png')
+"""
+
+df1 = pd.read_csv('second_submission.csv')
+
