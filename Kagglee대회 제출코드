@@ -1,0 +1,7 @@
+#캐글대회 제출 csv 파일 만드는 코드
+
+y_pred = model.predict(X_test)
+target = 'Transported'
+submission[target] = y_pred
+
+submission.to_csv('second_submission.csv', index=False, header=1)
