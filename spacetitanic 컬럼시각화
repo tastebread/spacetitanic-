@@ -1,0 +1,184 @@
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import plotly.express as px
+import scipy.stats as stats
+import mplcyberpunk
+from pandas_profiling import ProfileReport
+from scipy.stats.contingency import association
+from sklearn.metrics import mean_absolute_error,r2_score
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from category_encoders import OneHotEncoder
+from category_encoders import OrdinalEncoder
+from category_encoders import TargetEncoder
+from sklearn.preprocessing import LabelEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+from sklearn.metrics import plot_confusion_matrix
+from sklearn.linear_model import RidgeCV
+from sklearn.feature_selection import f_regression, SelectKBest
+from sklearn.linear_model import Ridge
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
+from catboost import CatBoostClassifier
+from sklearn.svm import SVC
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import validation_curve
+from sklearn.model_selection import RandomizedSearchCV
+from scipy.stats import randint,uniform
+import warnings
+warnings.filterwarnings(action='ignore')
+plt.style.use('cyberpunk')
+train = pd.read_csv('/Users/tastebread/Desktop/kaggle/spacetitanic/train.csv')
+test = pd.read_csv('/Users/tastebread/Desktop/kaggle/spacetitanic/test.csv')
+submission = pd.read_csv('/Users/tastebread/Desktop/kaggle/spacetitanic/sample_submission.csv')
+df = [train,test]
+
+df_num = train[['Age','RoomService','FoodCourt','ShoppingMall','Spa','VRDeck','Transported']]
+df_cat = train[['HomePlanet','CryoSleep','Destination','VIP','Transported']]
+
+#숫자형 컬럼의 분포도
+"""
+sns.pairplot(df_num, hue='Transported')
+#pairplot ->각 컬럼별 데이터에 대한 상관관계나 분류적 특성을 보염
+#hue -> 특성에 따라 색상을 다르게 할 수있음
+#var -> var옵션으로 몇개의 컬럼만 따로 볼수 있음
+plt.savefig('numerical variables.png')
+"""
+#age-transported 간의 관계를 시각화
+"""
+plt.figure(figsize=(10,5))
+sns.histplot(data=train,x='Age',hue='Transported',bins=7,binwidth=1,kde=True)
+#파라미터 data -> 데이터셋, x-> x축에 들어갈 컬럼 hue-> 특성에 따라 색상을 다르게 할수있음
+#bins -> 구간의 갯수 정하기 , binwidth -> 구간의 크기를 수동으로 정하기
+#kde -> 커널밀도함수 표시여부 (True가 디폴트값)
+plt.savefig('Age-Transported')
+"""
+#숫자 변수의 상관 관계 알아내기
+"""
+plt.subplots(figsize=(10,10))
+mask = np.triu(np.ones_like(df_num.corr()))
+sns.heatmap(df_num.corr(), mask=mask, cmap='cool',annot=True, annot_kws={'fontsize': 13},square=True)
+plt.savefig('df_num_corr.png')
+알아낸 사실들
+1.age와 타겟 간의 관계는 높지 않다
+2.foodcurt,VRDeck,Spa 는 타겟과 높은 상관계수를 가진다
+"""
+
+for datasets in df:
+    datasets['Premium'] = datasets['RoomService'] +datasets['Spa'] + datasets['VRDeck']
+    datasets['Basic'] = datasets['FoodCourt'] + datasets['ShoppingMall']
+    datasets['All_Services'] = datasets['RoomService'] + datasets['Spa'] + datasets['VRDeck'] + datasets['FoodCourt'] + datasets['ShoppingMall']
+
+df_num = train[['Age', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Basic', 'Premium', 'All_Services', 'Transported']]
+
+#AgeGroup 피쳐 만들기
+
+for datasets in df:
+    datasets['Age'] = datasets['Age'].fillna(datasets['Age'].mean())
+    datasets['AgeGroup'] = pd.cut(datasets['Age'],5)
+    #pd.cut -> 데이터를 동일한 길이로 나누는것
+    #파라미터 -> (데이터,구간,labels) % labels 는 따로 지정해주지 않으면 구간의 나눈 기준이 레이블명이됨
+print(train[['AgeGroup','Transported']].groupby(['AgeGroup'], as_index=False).mean())
+#.groupby -> 같은 값을 하나로 묶어 통계 또는 집계 결과를 얻기 위해 사용하는것
+#Agegroup 컬럼의 평균을 나타냄
+#as_index -> groupby를 사용하면 기본으로 그룹 라벨이 index가 되는데 사용하고싶지 않은경우 False
+
+#AgeGroup컬럼을 카테고리형 변수로 바꿔줌 (결측치값이 정규분포를 따르므로 평균으로 넣어줌)
+for datasets in df:
+    datasets.loc[datasets['Age'] <=15, 'AgeGroupNum'] = 0
+    datasets.loc[(datasets['Age'] > 15) & (datasets['Age'] <=31), 'AgeGroupNum'] = 1
+    datasets.loc[(datasets['Age'] > 31) & (datasets['Age'] <=47), 'AgeGroupNum'] = 2
+    datasets.loc[(datasets['Age'] > 47) & (datasets['Age'] <=63), 'AgeGroupNum'] = 3
+    datasets.loc[datasets['Age'] > 63, 'AgeGroupNum'] = 4
+
+print(train['AgeGroupNum'].unique())
+
+#나머지 숫자형 변수의 누락된 부분들 채우기
+for datasets in df:
+    datasets['RoomService'] = datasets['RoomService'].fillna(train['RoomService'].median())
+    datasets['FoodCourt'] = datasets['FoodCourt'].fillna(train['FoodCourt'].median())
+    datasets['ShoppingMall'] = datasets['ShoppingMall'].fillna(train['ShoppingMall'].median())
+    datasets['Spa'] = datasets['Spa'].fillna(train['Spa'].median())
+    datasets['VRDeck'] = datasets['VRDeck'].fillna(train['VRDeck'].median())
+
+    datasets['Premium'] = datasets['RoomService'] + datasets['Spa'] + datasets['VRDeck']
+    datasets['Basic'] = datasets['FoodCourt'] + datasets['ShoppingMall']
+    datasets['All_Services'] = datasets['RoomService'] + datasets['Spa'] + datasets['VRDeck'] + datasets['FoodCourt'] + \
+                               datasets['ShoppingMall']
+
+#우리의 목표는 qq플랏의 모든 점이 선에 근접할수있도록 하는것이 목표이다
+def QQplot(df, col): #data,컬럼
+    fig, axes = plt.subplots(1,2, figsize=(12,5))
+    plt.subplot(1,2,1)
+    sns.histplot(x=df[col], kde=True)
+
+    plt.subplot(1,2,2)
+    stats.probplot(df[col].dropna(), dist='norm',plot=plt)
+    plt.tight_layout()
+    plt.show()
+df_services = train[['RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Premium', 'All_Services', 'Transported']]
+
+#QQplot(df_services,'RoomService')
+
+train_df_copy = train.copy()
+
+train_df_copy['RoomService'] = np.log(train_df_copy['RoomService'] + 1)
+train_df_copy['FoodCourt'] = np.log(train_df_copy['FoodCourt'] + 1)
+train_df_copy['ShoppingMall'] = np.log(train_df_copy['ShoppingMall'] + 1)
+train_df_copy['Spa'] = np.log(train_df_copy['Spa'] + 1)
+train_df_copy['VRDeck'] = np.log(train_df_copy['VRDeck'] + 1)
+train_df_copy['Premium'] = np.log(train_df_copy['Premium'] + 1)
+train_df_copy['All_Services'] = np.log(train_df_copy['All_Services'] + 1)
+
+df_num = train[
+    ['Age', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Premium', 'All_Services', 'Transported']]
+
+#새로운 컬럼 spent 만들기 (All_service 기능을 범주형 으로 전환해보기)
+for datasets in df:
+    datasets['Spent'] = 0
+    datasets.loc[datasets['All_Services'] > 0, 'Spent'] = 1
+
+#범주형 변수 결측치를 채우는 방법으로는 가장 일반적인 라벨의 모드로 채워주는것이 좋다
+df_cat = train[['HomePlanet', 'CryoSleep', 'Destination', 'VIP', 'Transported', 'AgeGroupNum', 'Spent']]
+
+def Catplot(df,x,y):
+    plt.subplots(1,2, figsize=(14,5))
+    plt.subplot(1,2,1)
+    sns.countplot(x=df[x].dropna(), hue=df[y])
+
+    plt.subplot(1,2,2)
+    plt.ylim(0,1)
+    sns.lineplot(x=df[x],y=df[y], data=df, ci=None,linewidth=3, marker='o')
+    plt.show()
+
+"""
+HomePlanet (고향행성)분석
+1.대부분은 자기들의 고향행성 지구에서 출발했다(그다음이 유로파,화성)
+2.수송률은 유로파가 가장 높고 , 그다음이 지구 마지막으로 화성이다
+Cryosleep 분석 (동면)
+1.대부분의 승객들은 동면을 하지 않았음
+2.단 동면을 했을때 높은 확률의 수송률을 보임
+Vip 승객 분석
+1.VIP 승객들은 엄청 적고 대부분은 일반 승객이었다
+2.의외로 VIP 승객들이 수송률이 더 낮았다
+
+나이에 따른 수송률 분석
+
+1.분석할만한건 15세 이상 31세 이하(젊은층) 이주율이 높다
+"""
+
+#승객이름 , 객실번호 추출해보기
+#승객 ID = ggg_pp(ggg=그룹, pp=그룹 내 번호)
+#객실 = 갑판/번호/측면(측면: P=좌현, S=좌현)
+#이름 = 이름 + 성
